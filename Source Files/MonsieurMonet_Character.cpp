@@ -45,8 +45,15 @@
 #include "ProceduralMeshComponent.h"
 #include "Interactables/MM_CircuitBoxes_Camera.h"
 #include "MM_CoverSystem.h"
-#include "Runtime/Engine/Classes/Components/BoxComponent.h"
-#include "Runtime/Engine/Classes/Components/DecalComponent.h"
+#include "Components/BoxComponent.h"
+#include<thread>
+#include "Engine/DecalActor.h"
+#include "Components/DecalComponent.h"
+#include "MM_Cheese.h"
+#include "Classes/AkComponent.h"
+#include "Classes/AkAudioEvent.h"
+#include "Classes/AkGameplayStatics.h"
+#include "Classes/Camera/PlayerCameraManager.h"
 
 //ENGINE_API void AMonsieurMonet_Character::AddDia(FName DiaName, const FTableDiaBase & DiaData)
 //{
@@ -68,8 +75,8 @@ AMonsieurMonet_Character::AMonsieurMonet_Character()
 	bUseControllerRotationPitch = false;
 	bUseControllerRotationRoll = false;
 
-	GetCharacterMovement()->MaxWalkSpeed = 260.0f;
-	GetCharacterMovement()->MaxWalkSpeedCrouched = 280.0f;
+	GetCharacterMovement()->MaxWalkSpeed = 300.0f;
+	GetCharacterMovement()->MaxWalkSpeedCrouched = 230.0f;
 	NoiseLevel = 700.0f;
 	GetCharacterMovement()->bOrientRotationToMovement = true;
 	GetCharacterMovement()->RotationRate = FRotator(0.0f, 540.0f, 0.0f);
@@ -78,6 +85,7 @@ AMonsieurMonet_Character::AMonsieurMonet_Character()
 	CameraBoom->SetupAttachment(RootComponent);
 	CameraBoom->TargetArmLength = 340.0f;
 	CameraBoom->bUsePawnControlRotation = true;
+	CameraBoom->TargetOffset = FVector(0.0f, 0.0f, 250.0f);
 
 	PlayerCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("PlayerCamera"));
 	PlayerCamera->SetupAttachment(CameraBoom);
@@ -123,6 +131,13 @@ AMonsieurMonet_Character::AMonsieurMonet_Character()
 	//LOSMesh->AttachToComponent(RootComponent, FAttachmentTransformRules(EAttachmentRule::SnapToTarget, true));
 	LOSMesh->SetupAttachment(GetCapsuleComponent());
 
+	//for the lure throwing
+	LureStart = CreateDefaultSubobject<UBoxComponent>(TEXT("LureStart"));
+	LureStart->SetupAttachment(GetMesh(), SocketName);
+	/*LureStart->AttachTo(GetMesh(), SocketName, EAttachLocation::SnapToTarget);*/
+	/*LureStart->SetBoxExtent(FVector(5.0F, 5.0F, 5.0F));*/
+
+
 
 	//Timeline Component for the crouch camera transition.
 	//Creating a float curve for the crouch camera timeline.
@@ -142,7 +157,7 @@ AMonsieurMonet_Character::AMonsieurMonet_Character()
 
 	//Timeline Component for the dynamic sprint camera transition.
 	//Creating a float curve for the sprint camera timeline.
-	static ConstructorHelpers::FObjectFinder<UCurveFloat> SprintCurve(TEXT("CurveFloat'/Game/Curves/Sprint_Camera_float.Sprint_Camera_float'"));
+	static ConstructorHelpers::FObjectFinder<UCurveFloat> SprintCurve(TEXT("CurveFloat'/Game/Curves/Sprint_CameraCurve.Sprint_CameraCurve'"));
 	if (SprintCurve.Object)
 	{
 		SprintCamCurve = SprintCurve.Object;
@@ -150,10 +165,11 @@ AMonsieurMonet_Character::AMonsieurMonet_Character()
 
 	SprintCameraAnimation = FTimeline{};
 	FOnTimelineFloat PlaySprintAnim{};
-	PlaySprintAnim.BindUFunction(this, "TickSprintTimeline");
-	FOnTimelineEventStatic FinishedSprintAnim{};
-	FinishedSprintAnim.BindUFunction(this, "PlaySprintCameraAnim");
-	SprintCameraAnimation.AddInterpFloat(SprintCurve.Object, PlaySprintAnim, FName{ TEXT("SprintCameraTransition") });
+	PlaySprintAnim.BindUFunction(this, "TickSprintTL");
+	/*FOnTimelineEventStatic FinishedSprintAnim{};
+	FinishedSprintAnim.BindUFunction(this, "PlaySprintCameraAnim");*/
+	SprintCameraAnimation.AddInterpFloat(SprintCurve.Object, PlaySprintAnim, FName{ TEXT("SprintCameraTrans") });
+
 
 	//Timeline Component for the dynamic crouch walk camera transition.
 	//Creating a float curve for the crouch camera timeline.
@@ -169,22 +185,31 @@ AMonsieurMonet_Character::AMonsieurMonet_Character()
 	FOnTimelineEventStatic FinishedCWAnim{};
 	FinishedCWAnim.BindUFunction(this, "PlayCWCameraAnim");
 	CrouchWalkTL.AddInterpFloat(CWCurve.Object, PlayCWAnimation, FName{ TEXT("CrouchWalkCameraTransition") });
+
+
+	//for the aiming
+	TargetEndDecal = CreateDefaultSubobject<UDecalComponent>(TEXT("TargetEndDecal"));
+	TargetEndDecal->SetupAttachment(RootComponent);
+	
+	//Aim assistants
+	BallAim = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("BallAim"));
+	BallAim->AttachTo(RootComponent);
 }
 
 void AMonsieurMonet_Character::InitLOSMesh()
 {
-	int NumVertices = FMath::RoundToInt(ArcAngle / AngleStep) + 2;
+	int32 NumVertices = FMath::RoundToInt(ArcAngle / AngleStep) + 2;
 	LOSVertices.Init(FVector::ZeroVector, NumVertices);
 
 
-	int NumTriangles = (ArcAngle == 360) ? ((NumVertices - 1) * 3) : ((NumVertices - 2) * 3);
+	int32 NumTriangles = (ArcAngle == 360) ? ((NumVertices - 1) * 3) : ((NumVertices - 2) * 3);
 	LOSTriangles.Init(0, NumTriangles);
 
 	FVector LineStartLocation = GetActorLocation();
 	FVector CurrentActorForward = GetActorForwardVector();
 	float MinAngle = -ArcAngle / 2;
 	float MaxAngle = ArcAngle / 2;
-	int VertexIndex = 1;
+	int32 VertexIndex = 1;
 	for (float CurrentAngle = MinAngle;
 		CurrentAngle <= MaxAngle;
 		CurrentAngle += AngleStep)
@@ -198,7 +223,7 @@ void AMonsieurMonet_Character::InitLOSMesh()
 	}
 
 	VertexIndex = 0;
-	for (int Triangle = 0; Triangle < LOSTriangles.Num(); Triangle += 3)
+	for (int32 Triangle = 0; Triangle < LOSTriangles.Num(); Triangle += 3)
 	{
 		LOSTriangles[Triangle] = 0;
 		LOSTriangles[Triangle + 1] = VertexIndex + 1;
@@ -225,7 +250,9 @@ void AMonsieurMonet_Character::TickLOSMesh()
 {
 	UWorld* World = GetWorld();
 	if (World == nullptr)
+	{
 		return;
+	}
 
 	const FName TraceTag("LoSTraceTag");
 	FCollisionQueryParams TraceParams = FCollisionQueryParams(TraceTag, false, this);
@@ -236,7 +263,7 @@ void AMonsieurMonet_Character::TickLOSMesh()
 
 	float MinAngle = -ArcAngle / 2;
 	float MaxAngle = ArcAngle / 2;
-	int VertexIndex = 1;
+	int32 VertexIndex = 1;
 	for (float CurrentAngle = MaxAngle;
 		CurrentAngle >= MinAngle;
 		CurrentAngle -= AngleStep)
@@ -264,8 +291,8 @@ void AMonsieurMonet_Character::TickLOSMesh()
 	}
 
 	VertexIndex = 0;
-	int NumVertices = LOSVertices.Num();
-	for (int Triangle = 0; Triangle < LOSTriangles.Num(); Triangle += 3)
+	int32 NumVertices = LOSVertices.Num();
+	for (int32 Triangle = 0; Triangle < LOSTriangles.Num(); Triangle += 3)
 	{
 		LOSTriangles[Triangle] = 0;
 		LOSTriangles[Triangle + 1] = VertexIndex + 1;
@@ -362,7 +389,7 @@ void AMonsieurMonet_Character::BeginPlay()
 
 	//Initializing Timeline components for the dynamic sprint camera transition/Animation.
 	SprintCameraAnimation.SetPropertySetObject(this);
-	SprintCameraAnimation.SetDirectionPropertyName(FName("TlineFinishHandle_Sprint"));
+	SprintCameraAnimation.SetDirectionPropertyName(FName("SprintCamTimelineDir"));
 	SprintCameraAnimation.SetLooping(false);
 	SprintCameraAnimation.SetTimelineLength(1.0f);
 	SprintCameraAnimation.SetTimelineLengthMode(ETimelineLengthMode::TL_TimelineLength);
@@ -376,7 +403,7 @@ void AMonsieurMonet_Character::BeginPlay()
 	CrouchWalkTL.SetTimelineLength(1.0f);
 	CrouchWalkTL.SetTimelineLengthMode(ETimelineLengthMode::TL_TimelineLength);
 	CrouchWalkTL.SetPlaybackPosition(0.0f, true, true);
-	CrouchWalkTL.SetPlayRate(1.3f);
+	CrouchWalkTL.SetPlayRate(1.0f);
 
 	//LOS for minimap.
 	if (IsLOSOn)
@@ -390,45 +417,51 @@ void AMonsieurMonet_Character::BeginPlay()
 
 	LOSMesh->bOwnerNoSee = true;
 
-	if (bIsAiming)
-	{
+	//resized the LureBox
+	LureStart->SetBoxExtent(FVector(5.0F, 5.0F, 5.0F));
 
+	//set decal visibility to false
+	TargetEndDecal->DecalSize = FVector(50.0F, 50.0F, 50.0F);
+	TargetEndDecal->SetVisibility(false);
 
-	}
 
 	//Set Timer by Function name alternative (To notify the enemy pawn of the noise produced by the player character).
 	GetWorld()->GetTimerManager().SetTimer(NotifyHandle, this, &AMonsieurMonet_Character::NotifyPawnNoise, 0.3f, true, 0.3f);
+
+	//Delegate to receive damage.
+	OnTakeAnyDamage.AddDynamic(this, &AMonsieurMonet_Character::DamageReceived);
+
 }
 
 // Called every frame
 void AMonsieurMonet_Character::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-	/*CheckForInteractables();*/
-	CrouchRate = FMath::FInterpConstantTo(50.0f, 85.0f, 100.0f, 10.0f);
-	/*CrouchCamera_F = FMath::FInterpTo(0.0f, -40.0f, 3.0f, 0.3f);
-	CrouchCamera_R = FMath::FInterpTo(-40.0f, 0.0f, 3.0f, 0.3f);*/
-
-	if (Aim_CameraTimeline != NULL)
-	{
-		Aim_CameraTimeline->TickComponent(DeltaTime, ELevelTick::LEVELTICK_TimeOnly, NULL);
-	}
 
 	if (IsLOSOn)
 	{
 		TickLOSMesh();
 	}
 
+	//updates the stamina
 	UpdateStamina();
+
+	//updates aiming positions
+	if (bIsAiming == true && canAimCPP == true)
+	{
+		TickAim();
+	}
 
 	//Tick crouch timeline.
 	CrouchCameraAnimation.TickTimeline(DeltaTime);
+
 	//Tick Sprint Camera timeline.
-	SprintCameraAnimation.TickTimeline(DeltaTime);
+	if (Issprinting == true)
+		SprintCameraAnimation.TickTimeline(DeltaTime);
 	//Tick CW camera timeline.
 	CrouchWalkTL.TickTimeline(DeltaTime);
 
-	if (CurrentStamina <= 0.2f && SprintCameraAnimation.IsReversing() == false)
+	if (CurrentStamina < 0.2f && SprintCameraAnimation.IsReversing() == false)
 	{
 		SprintCameraAnimation.Reverse();
 		StaminaIsLow = false;
@@ -439,6 +472,24 @@ void AMonsieurMonet_Character::Tick(float DeltaTime)
 		CrouchWalkTL.Play();
 	else
 		CrouchWalkTL.Reverse();
+
+	if (GetCharacterMovement()->IsCrouching() == true)
+	{
+		NoiseRadius = 0.0f;
+		NoiseRadiusComp->SetSphereRadius(NoiseRadius);
+		GetCharacterMovement()->MaxWalkSpeedCrouched = 230.0f;
+	}
+	else if (GetCharacterMovement()->MaxWalkSpeed >= 300.0f && GetCharacterMovement()->IsCrouching() == false)
+	{
+		NoiseRadius = 250.0f;
+		NoiseRadiusComp->SetSphereRadius(NoiseRadius);
+	}
+
+	if (GetCharacterMovement()->MaxWalkSpeed >= 300.0f)
+	{
+		NoiseRadius = 500.0f;
+		NoiseRadiusComp->SetSphereRadius(NoiseRadius);
+	}
 }
 
 
@@ -492,6 +543,8 @@ void AMonsieurMonet_Character::SetupPlayerInputComponent(UInputComponent* Player
 	PlayerInputComponent->BindAction("Aim", IE_Released, this, &AMonsieurMonet_Character::AimStop);
 	PlayerInputComponent->BindAction("Shoot", IE_Pressed, this, &AMonsieurMonet_Character::Shoot);
 	PlayerInputComponent->BindAction("CoverFN", IE_Pressed, this, &AMonsieurMonet_Character::ToggleCover);
+	PlayerInputComponent->BindAction("CoverFN", IE_Released, this, &AMonsieurMonet_Character::Stop_Cover);
+	//PlayerInputComponent->BindAction("CoverFN", IE_Pressed, this, &AMonsieurMonet_Character::StartHealthregen);
 
 	//this is for selecting the current lure item
 	PlayerInputComponent->BindAction("SelectCoin", IE_Pressed, this, &AMonsieurMonet_Character::SelectCoin);
@@ -509,7 +562,7 @@ void AMonsieurMonet_Character::SetupPlayerInputComponent(UInputComponent* Player
 
 void AMonsieurMonet_Character::MoveForward(float Value)
 {
-	if (Controller != NULL && Value != 0.0f && !bIsInCover && IsHiding == false)
+	if (Controller != NULL && Value != 0.0f && !bIsInCover && IsHiding == false && bIsEatingCheese == false)
 	{
 		const FRotator Rotation = Controller->GetControlRotation();
 		const FRotator YawRotation(0.0f, Rotation.Yaw, 0.0f);
@@ -526,7 +579,7 @@ void AMonsieurMonet_Character::MoveRight(float Value)
 {
 	CoverValue = Value;
 
-	if (Controller != NULL && Value != 0.0f && IsHiding == false)
+	if (Controller != NULL && Value != 0.0f && IsHiding == false && bIsEatingCheese == false)
 	{
 		if (!bIsInCover)
 		{
@@ -563,32 +616,42 @@ void AMonsieurMonet_Character::ControllerPitch(float Pitch)
 {
 	float BaseLookUpRate = 70.0f;
 	float Value = Pitch * BaseLookUpRate * GetWorld()->GetDeltaSeconds();
+	if (Pitch > 140.0f && Pitch < 180.0f)
+		Pitch = 140.0f;
+	//if (Pitch < 300.0f && Pitch > 180.0f)
+	//	Pitch = 300.0f;
 	AddControllerPitchInput(Value);
+	CamPitch += Value;
 }
 
 void AMonsieurMonet_Character::ControllerYaw(float Yaw)
 {
 	float BaseTurnrate = 70.0f;
 	float Value = Yaw * BaseTurnrate * GetWorld()->GetDeltaSeconds();
+	
 	AddControllerYawInput(Value);
+	CamYaw += Value;
 }
 
 void AMonsieurMonet_Character::Sprint()
 {
-	if (GetCharacterMovement()->IsCrouching() == false && CanSprint)
+	if (CanSprint)
 	{
+		UnCrouch();
+		Issprinting = true;
+		AimStop_Implementation();
+		NoiseRadius = 500.0f;
+		NoiseRadiusComp->SetSphereRadius(NoiseRadius);
 		GetCharacterMovement()->MaxWalkSpeed = 520.0f;
-		if (GetVelocity().Size() > 0)
+		if (GetCharacterMovement()->MaxWalkSpeed >= 300.0f)
 		{
 			NoiseLevel = 1400.0f;
-			Issprinting = true;
 			SprintCameraAnimation.Play();
 			NoiseRadius = 500.0f;
 			NoiseRadiusComp->SetSphereRadius(NoiseRadius);
 		}
 		//CurrentStamina -= CurrentStamina*world->GetDeltaSeconds();
 	}
-
 }
 
 void AMonsieurMonet_Character::Sprint_Stop()
@@ -601,12 +664,12 @@ void AMonsieurMonet_Character::Sprint_Stop()
 
 	if (GetCharacterMovement()->IsCrouching() == false)
 	{
-		GetCharacterMovement()->MaxWalkSpeed = 260.0f;
+		GetCharacterMovement()->MaxWalkSpeed = 300.0f;
 		NoiseLevel = 700.0f;
-		Issprinting = false;
 		SprintCameraAnimation.Reverse();
 		NoiseRadius = 250.0f;
 		NoiseRadiusComp->SetSphereRadius(NoiseRadius);
+		Issprinting = false;
 		//world->GetTimerManager().SetTimer(RecoverStaminaHandle, &AMonsieurMonet_Character::RecoverStamina(), 1.0f, false, 4.8f);
 	}
 }
@@ -625,7 +688,7 @@ void AMonsieurMonet_Character::UpdateStamina()
 		CanSprint = true;
 	}
 
-	if (Issprinting)
+	if (Issprinting && GetVelocity().Size() > 300.0f)
 	{
 		CurrentStamina -= StaminaConsumeRate;
 	}
@@ -638,7 +701,7 @@ void AMonsieurMonet_Character::UpdateStamina()
 	}
 
 	//recovers sprint bar
-	if (CurrentStamina < MaxStamina && !Issprinting)
+	if (CurrentStamina < MaxStamina && GetVelocity().Size() < 300.0f)
 	{
 		CurrentStamina += StaminaRecoverRate;
 	}
@@ -649,6 +712,8 @@ void AMonsieurMonet_Character::NotifyPawnNoise()
 	for (AActor* Act : RegisteredGuards)
 	{
 		ASwift_GuardCharacter* SwiftGuardCharacter = Cast<ASwift_GuardCharacter>(Act);
+		if (SwiftGuardCharacter == nullptr)
+			return;
 		SwiftGuardCharacter->OnHearPlayer(this, GetActorLocation(), NoiseLevel);
 		NotifyPawnNoise_Event();
 	}
@@ -664,9 +729,9 @@ void AMonsieurMonet_Character::PlayCrouchCameraAnim()
 {
 }
 
-void AMonsieurMonet_Character::TickSprintTimeline(float Value)
+void AMonsieurMonet_Character::TickSprintTL(float Value)
 {
-	float LerpedValue = FMath::Lerp(340.0f, 820.0f, Value);
+	float LerpedValue = FMath::Lerp(340.0f, 800.0f, Value);
 	CameraBoom->TargetArmLength = LerpedValue;
 }
 
@@ -694,8 +759,8 @@ void AMonsieurMonet_Character::OnNoiseEndOverlap(UPrimitiveComponent * Overlappe
 
 void AMonsieurMonet_Character::TickCWTimeline(float Value)
 {
-	float LLerpedValue = FMath::Lerp(340.0f, 850.0f, Value);
-	float OLerpedValue = FMath::Lerp(0.0f, 200.0f, Value);
+	float LLerpedValue = FMath::Lerp(340.0f, 750.0f, Value);
+	float OLerpedValue = FMath::Lerp(100.0f, 200.0f, Value);
 	CameraBoom->TargetArmLength = LLerpedValue;
 	CameraBoom->TargetOffset = FVector(0.0f, 0.0f, OLerpedValue);
 }
@@ -704,50 +769,39 @@ void AMonsieurMonet_Character::PlayCWCameraAnim()
 {
 }
 
+void AMonsieurMonet_Character::EatCheese()
+{
+	FTimerHandle CheeseTimerHandle;
+	PlayAnimMontage(EatingMontage, 1.0f);
+	GetWorld()->GetTimerManager().SetTimer(CheeseTimerHandle, EatingMontage->GetPlayLength(), false, EatingMontage->GetPlayLength());
+	Health += 0.25;
+	CheeseCount -= 1;
+}
+
+void AMonsieurMonet_Character::DamageReceived(AActor* DamagedActor, float Damage, const class UDamageType * DamageType, AController * InstigatedBy, AActor * DamageCauser)
+{
+	if (Health <= 0.0f)
+	{
+		/*	PlayCameraShake(DeathCamShake, 10.0f, ECameraAnimPlaySpace::World);
+			APlayerController* PlayerController = Cast <APlayerController>(UGameplayStatics::GetPlayerController(GetWorld(), 0));
+			DisableInput(PlayerController);
+			GetCharacterMovement()->StopMovementImmediately();
+			PlayAnimMontage(PlayerDeathMontage, 1.0f);
+			UAkGameplayStatics::PostEvent(Player_Lose);*/
+	}
+}
+
 void AMonsieurMonet_Character::Interact()
 {
 	UWorld* TheWorld = GetWorld();
 	if (TheWorld != nullptr)
 	{
 		CheckForInteractables();
-		if (CurrentInteractable != nullptr)
+		if (CurrentInteractable != nullptr && bCanTakeCover == false)
 		{
 			/*PlayAnimMontage(PickupMontage, 1.0f, NAME_None);*/
 			//TheWorld->GetTimerManager().SetTimer(PickupHandle, &AMonsieurMonet_Character::CurrentInteractable->PUInteract_Implementation(), 1.0f, false, 4.8f);
 			CurrentInteractable->PUInteract_Implementation();
-		}
-	}
-
-	//Cover System.
-	if (IsInteracting == false)
-	{
-		if (bCanTakeCover == true)
-		{
-			TArray<AActor*> Cover;
-			GetOverlappingActors(Cover, CoverSystems);
-			for (AActor* Act : Cover)
-			{
-				CoverActors = Cast<AMM_CoverSystem>(Act);
-			}
-			bIsInCover = true;
-			if (CoverActors != nullptr)
-			{
-				//Set player's rotation.
-				FQuat PlayerRotation = CoverActors->ArrowComponent->GetComponentQuat();
-				SetActorRotation(PlayerRotation, ETeleportType::None);
-				//Set collision responses of the volumes to block the player character so the player cannot move out of bounds of the cover trigger actor.
-				CoverActors->BlockingVol_Left->SetCollisionResponseToChannel(ECC_Pawn, ECollisionResponse::ECR_Block);
-				CoverActors->BlockingVol_Right->SetCollisionResponseToChannel(ECC_Pawn, ECollisionResponse::ECR_Block);
-				CoverActors->BlockingVolume_Front->SetCollisionResponseToChannel(ECC_Pawn, ECollisionResponse::ECR_Block);
-			}
-		}
-		else if (bCanTakeCover == false && CoverActors != nullptr)
-		{
-			bIsInCover = false;
-			//Set the collision responses of the volumes back to default (Ignore).
-			CoverActors->BlockingVol_Left->SetCollisionResponseToChannel(ECC_Pawn, ECollisionResponse::ECR_Ignore);
-			CoverActors->BlockingVol_Right->SetCollisionResponseToChannel(ECC_Pawn, ECollisionResponse::ECR_Ignore);
-			CoverActors->BlockingVolume_Front->SetCollisionResponseToChannel(ECC_Pawn, ECollisionResponse::ECR_Ignore);
 		}
 	}
 }
@@ -772,6 +826,97 @@ void AMonsieurMonet_Character::ToggleInventory()
 	}
 }
 
+void AMonsieurMonet_Character::TickAim()
+{
+	UWorld* world = GetWorld();
+	if (world == nullptr)
+	{
+		return;
+	}
+
+	FHitResult Hit;
+	TArray<FVector> OutPathPos;
+	FVector LastPos;
+	FVector StartPos = LureStart->GetComponentLocation();
+	//LaunchVel = (forward vector of camera) * 2500.0F
+	FVector CamFVector = PlayerCamera->GetForwardVector();
+	FVector LaunchVel = CamFVector * 2500.0F;
+	const TArray<AActor*> ActorsIgnored;
+
+	UGameplayStatics::Blueprint_PredictProjectilePath_ByTraceChannel(world, Hit, OutPathPos, LastPos, StartPos, LaunchVel,
+		true, 20.0F, ECollisionChannel::ECC_Visibility, false,
+		ActorsIgnored, EDrawDebugTrace::None, 0.0F);
+
+	if (Hit.bBlockingHit == false)
+	{
+		TargetEndDecal->SetVisibility(false);
+		BallAim->SetVisibility(false);
+		return;
+	}
+
+	//if hit is true:
+	FTransform item;
+	item.SetLocation((Hit.ImpactPoint));
+	//item.SetRotation(Hit.ImpactNormal.Rotation().Quaternion());
+	FRotator rot = FRotationMatrix::MakeFromX(Hit.ImpactNormal).Rotator();
+	item.SetRotation(rot.Quaternion());
+
+	TargetEndDecal->SetWorldTransform(item);
+	TargetEndDecal->SetVisibility(true);
+	AimTargetPos = Hit.ImpactPoint;
+	ProjVel = LaunchVel;
+	HitArray = OutPathPos;
+
+	
+	if (showBallAimCPP == false)
+	{
+		return;
+	}
+
+	BallAim->SetVisibility(true);
+
+	//gets current number of visible spheres
+	CurrentAimInst = BallAim->GetInstanceCount();
+
+	CurrentHitNum = OutPathPos.Num();
+
+	FTransform transform;
+	transform.SetLocation(FVector::ZeroVector);
+	transform.SetRotation(FRotator::ZeroRotator.Quaternion());
+	transform.SetScale3D(FVector::ZeroVector);
+
+
+	if (CurrentAimInst < CurrentHitNum)
+	{
+		//adds more instances based on difference on needed instances
+		int32 difference = CurrentHitNum - CurrentAimInst;
+		for (int32 i = 0; i < difference; i++)
+		{
+			BallAim->AddInstanceWorldSpace(transform);
+		}
+	}
+
+	//sets the ball aim positions
+	for (int32 j = 0; j < CurrentHitNum; j++)
+	{
+		FTransform trans;
+		trans.SetLocation(OutPathPos[j]);
+		trans.SetRotation(FRotator::ZeroRotator.Quaternion());
+		trans.SetScale3D(FVector(0.2F, 0.2F, 0.2F));
+		BallAim->UpdateInstanceTransform(j, trans, true, true, true);
+
+	}
+
+	//sets the ball aim positions of unused ones
+	if (CurrentHitNum < CurrentAimInst)
+	{
+		for (int32 k = CurrentHitNum; k < BallAim->GetInstanceCount(); k++)
+		{
+			BallAim->UpdateInstanceTransform(k, transform, true, false, true);
+		}
+	}
+}
+
 void AMonsieurMonet_Character::Aim_Implementation()
 {
 	UWorld* world = GetWorld();
@@ -786,7 +931,6 @@ void AMonsieurMonet_Character::Aim_Implementation()
 		NoiseLevel = 0.0f;
 		bUseControllerRotationYaw = true;
 		NoiseRadius = 0.0f;
-		NoiseRadiusComp->SetSphereRadius(NoiseRadius);
 	}
 	else if (bCrouching == true)
 	{
@@ -795,40 +939,16 @@ void AMonsieurMonet_Character::Aim_Implementation()
 		GetCharacterMovement()->MaxWalkSpeedCrouched = 50.0f;
 		NoiseLevel = 0.0f;
 		bUseControllerRotationYaw = true;
-		NoiseRadius = 250.0f;
-		NoiseRadiusComp->SetSphereRadius(NoiseRadius);
-	}
-
-
-	if (bIsAiming)
-	{
-		//FHitResult Hit;
-		//TArray<FVector> OutHits;
-		//FVector LastLocation;
-		//FVector StartPos = LureStart->GetComponentLocation();
-		//FVector LaunchVel = PlayerCamera->GetForwardVector * 2500.0F;
-		//TArray<AActor*> ActorsIgnored;
-
-
-		////tracing for the projectile location probablility
-		//UGameplayStatics::Blueprint_PredictProjectilePath_ByTraceChannel(world, Hit, OutHits, LastLocation, StartPos, LaunchVel, true, 32.0F,
-		//	ECollisionChannel::ECC_Visibility, false, ActorsIgnored,
-		//	EDrawDebugTrace::None, 0.0F);
-		////If the trace hit a location
-		//if (Hit.bBlockingHit)
-		//{
-		//	FTransform item;
-		//	item.SetLocation(Hit.ImpactPoint);
-		//	//item.SetRotation(Hit.ImpactNormal);
-
-		//	TargetEndDecal->SetWorldTransform(item);
-		//	TargetEndDecal->SetVisibility(true);
-		//}
+		FTimerHandle DelayHandle;
+		GetWorld()->GetTimerManager().SetTimer(DelayHandle, 1.3f, false, 1.3f);
+		NoiseRadius = 0.0f;
 	}
 }
 
 void AMonsieurMonet_Character::AimStop_Implementation()
 {
+	TargetEndDecal->SetVisibility(false);
+
 	if (bCrouching == false)
 	{
 		/*Aim_ReverseTimeline();*/
@@ -857,7 +977,7 @@ void AMonsieurMonet_Character::Shoot_Implementation()
 {
 	if (bIsAiming == false && bIsAiming_Crouch == false)
 	{
-		if (bTriggered == true)
+		if (bTriggered == true && IsAttacking == false)
 		{
 			CanTakeDown = true;
 			IsAttacking = true;
@@ -913,22 +1033,22 @@ void AMonsieurMonet_Character::PlayerCrouch()
 			NoiseLevel = 0.0f;
 			CrouchCameraAnimation.Reverse();
 			UnCrouch();
-			NotifyPawnNoise();
 			NoiseRadius = 0.0f;
 			NoiseRadiusComp->SetSphereRadius(NoiseRadius);
+			NoiseRadiusComp->SetCollisionResponseToAllChannels(ECollisionResponse::ECR_Overlap);
 			CrouchWalkTL.Reverse();
 		}
 		else
 		{
-			if (SprintCameraAnimation.IsPlaying() == true)
+			/*if (SprintCameraAnimation.IsPlaying() == true)
 			{
 				SprintCameraAnimation.Reverse();
-			}
+			}*/
 			bCrouching = false;
 			CrouchCameraAnimation.Play();
 			Crouch();
-			NotifyPawnNoise();
-			NoiseRadius = 250.0f;
+			NoiseRadius = 0.0f;
+			NoiseRadiusComp->SetCollisionResponseToAllChannels(ECollisionResponse::ECR_Ignore);
 			NoiseRadiusComp->SetSphereRadius(NoiseRadius);
 		}
 	}
@@ -973,11 +1093,6 @@ bool AMonsieurMonet_Character::AddItemToInventory(AMM_LureItems_Base * Item)
 			}*/
 			return true;
 		}
-		/*else
-		{
-		SlotEmpty = false;
-		return false;
-		}*/
 	}
 	else
 	{
@@ -1011,32 +1126,11 @@ void AMonsieurMonet_Character::CheckForInteractables()
 		{
 			//GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Red, FString::Printf(IsHit));
 
-			for (int i = 0; i < OutHits.Num(); i++)
+			for (int32 i = 0; i < OutHits.Num(); i++)
 			{
 				//Check for artifacts.
 				//class AMM_Pickups* Interactables = Cast<AMM_Pickups>(OutHits[i].GetActor());
 				class AMM_LureItems_Base* LureItems = Cast<AMM_LureItems_Base>(OutHits[i].GetActor());
-
-				//Check for artifacts
-				//if (OutHits[i].GetActor() == Interactables)
-				//{
-				//	if (Interactables != nullptr)
-				//	{
-				//		PlayAnimMontage(PickupMontage, 1.0f, NAME_None);
-				//		CurrentInteractable = Interactables;
-				//		bPickedUpP = true;
-				//		PickupItemss = Interactables;
-				//		/*World->GetTimerManager().SetTimer(PickupTimerHandle, this, &AMonsieurMonet_Character::PUPickedUp, 6.0f, false);*/
-				//	}
-				//	else
-				//	{
-				//		CurrentInteractable = nullptr;
-				//		PickupItemss = nullptr;
-				//		PickupText = FString("");
-				//		bPickedUpP = false;
-				//		return;
-				//	}
-				//}
 
 
 				//Check for lure items.
@@ -1050,6 +1144,7 @@ void AMonsieurMonet_Character::CheckForInteractables()
 						bPickedUpL = true;
 						NearestLureItem->Interact(this);
 						NearestLureItem->OnPickedUp();
+						Coins += 1;
 					}
 					else
 					{
@@ -1134,20 +1229,54 @@ void AMonsieurMonet_Character::SetCanTakeCover(bool CanTakeCover, AMM_CoverActor
 
 void AMonsieurMonet_Character::ToggleCover()
 {
-	if (bCanTakeCover)
+	//Cover system.
+	TArray<AActor*> Cover;
+	GetCapsuleComponent()->GetOverlappingActors(Cover, CoverSystems);
+
+	for (AActor* Act : Cover)
 	{
-		bIsInCover = !bIsInCover;
-		if (bIsInCover && Covers)
+		CoverActors = Cast<AMM_CoverSystem>(Act);
+	}
+	if (CoverActors == nullptr)
+	{
+		return;
+	}
+
+	if (bCanTakeCover == true)
+	{
+		bIsInCover = true;
+		if (CoverActors != nullptr)
 		{
-			//this screws up the movement :(
-			/*GetCharacterMovement()->bOrientRotationToMovement = false;*/
-			/*CameraBoom->bUsePawnControlRotation = false;*/
-			FRotator CoverRotation;
-			Covers->RetrieveDirectionAndRotation(CoverMovementDirection, CoverRotation);
-			SetActorRotation(CoverRotation);
-			Covers->PlayerCoverEvent();
+			//Set player's rotation.
+			FQuat PlayerRotation = CoverActors->ArrowComponent->GetComponentQuat();
+			SetActorRotation(PlayerRotation, ETeleportType::None);
+			//Set collision responses of the volumes to block the player character so the player cannot move out of bounds of the cover trigger actor.
+			CoverActors->BlockingVol_Left->SetCollisionResponseToChannel(ECC_Pawn, ECollisionResponse::ECR_Block);
+			CoverActors->BlockingVol_Right->SetCollisionResponseToChannel(ECC_Pawn, ECollisionResponse::ECR_Block);
+			CoverActors->BlockingVolume_Front->SetCollisionResponseToChannel(ECC_Pawn, ECollisionResponse::ECR_Block);
+			GetCharacterMovement()->bOrientRotationToMovement = true;
+			CoverActors->OnInteract();
 		}
 	}
+}
+
+void AMonsieurMonet_Character::Stop_Cover()
+{
+	if (CoverActors == nullptr)
+	{
+		return;
+	}
+	bIsInCover = false;
+	//Set the collision responses of the volumes back to default (Ignore).
+	CoverActors->BlockingVol_Left->SetCollisionResponseToChannel(ECC_Pawn, ECollisionResponse::ECR_Ignore);
+	CoverActors->BlockingVol_Right->SetCollisionResponseToChannel(ECC_Pawn, ECollisionResponse::ECR_Ignore);
+	CoverActors->BlockingVolume_Front->SetCollisionResponseToChannel(ECC_Pawn, ECollisionResponse::ECR_Ignore);/*
+	APlayerController* PlayerController = Cast<APlayerController>(UGameplayStatics::GetPlayerController(GetWorld(), 0));
+	PlayerController->SetViewTargetWithBlend(this, 1.0f, EViewTargetBlendFunction::VTBlend_EaseInOut, 4.6f);*/
+	GetCharacterMovement()->bOrientRotationToMovement = true;
+	GetCharacterMovement()->bUseControllerDesiredRotation = false;
+	APlayerController* PlayerController = Cast<APlayerController>(UGameplayStatics::GetPlayerController(GetWorld(), 0));
+	PlayerController->SetViewTargetWithBlend(UGameplayStatics::GetPlayerCharacter(GetWorld(), 0), 0.73f, EViewTargetBlendFunction::VTBlend_EaseInOut, 4.6f, false);
 }
 
 void AMonsieurMonet_Character::StartHealthregen()
@@ -1175,10 +1304,17 @@ void AMonsieurMonet_Character::ModifyHealth(float Amount, UDamageType * DamageTy
 
 void AMonsieurMonet_Character::TakeDown(AActor * TDPawn)
 {
-	/*GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Cyan, TEXT("yay"));*/
-	ASwift_GuardCharacter* SwiftGuard_Character = Cast<ASwift_GuardCharacter>(TDPawn);
-	SwiftGuard_Character->PlayAnimMontage(SwiftGuard_Character->TakendownMontage, 1.0f, NAME_None);
-	SwiftGuard_Character->IsStunned = true;
+	///*GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Cyan, TEXT("yay"));*/
+	//ASwift_GuardCharacter* SwiftGuard_Character = Cast<ASwift_GuardCharacter>(TDPawn);
+	//if (SwiftGuard_Character == nullptr)
+	//{
+	//	return;
+	//}
+	//if (SwiftGuard_Character)
+	//{
+	//	SwiftGuard_Character->PlayAnimMontage(SwiftGuard_Character->TakendownMontage, 1.0f, NAME_None);
+	//	SwiftGuard_Character->IsStunned = true;
+	//}
 }
 
 void AMonsieurMonet_Character::TakeDownCB(AActor* CBoxes)
@@ -1215,7 +1351,12 @@ void AMonsieurMonet_Character::OnBeginOverlap(UPrimitiveComponent * OverlappedCo
 
 void AMonsieurMonet_Character::OnEndOverlap(UPrimitiveComponent * OverlappedComp, AActor * OtherActor, UPrimitiveComponent * OtherComp, int32 OtherBodyIndex)
 {
-	IsAttacking = false;
+	ASwift_GuardCharacter* SwiftGuard = Cast<ASwift_GuardCharacter>(OtherActor);
+	if (OtherActor == SwiftGuard)
+	{
+		if (SwiftGuard->IsStunned == false)
+			IsAttacking = false;
+	}
 }
 
 
@@ -1226,30 +1367,13 @@ void AMonsieurMonet_Character::PUPickedUp()
 	//PickupText = CurrentInteractable->InteractableHelpText;
 }
 
-void AMonsieurMonet_Character::AddItemToInventoryByID(int ID)
+void AMonsieurMonet_Character::AddItemToInventoryByID(int32 ID)
 {
 	UWorld* world = GetWorld();
 	if (world == nullptr)
 	{
 		return;
 	}
-
-	//FString ContextString;
-
-	//AMonsieurMonetGameModeBase* StealthGameMode = Cast<AMonsieurMonetGameModeBase>(world->GetAuthGameMode());
-	//UDataTable* LureTable = StealthGameMode->GetLureItemDB();
-
-	//FLureItemInventory* ItemToAdd = LureTable->FindRow<FLureItemInventory>(ID, ContextString);
-
-	//if (ItemToAdd)
-	//{
-	//	//switch(Name):
-	//	//	case bombs:
-	//	//		break;
-	//	//add item to inventory
-	//	//GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Red, TEXT(Name));
-	//	//LInventory.Add(*ItemToAdd);
-	//	bombs++;
 
 	//}
 	switch (ID)
@@ -1287,7 +1411,7 @@ void AMonsieurMonet_Character::LIPickedUp()
 //Connect to Inventory UI
 void AMonsieurMonet_Character::SelectCoin()
 {
-	GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Red, TEXT("Coins are the current lure item"));
+	//GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Red, TEXT("Coins are the current lure item"));
 	if (Coins > 0)
 	{
 		CurrentLureItem = "Coins";
@@ -1295,7 +1419,7 @@ void AMonsieurMonet_Character::SelectCoin()
 }
 void AMonsieurMonet_Character::SelectPeel()
 {
-	GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Red, TEXT("Peels are the current lure item"));
+	//GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Red, TEXT("Peels are the current lure item"));
 	if (Peels > 0)
 	{
 		CurrentLureItem = "Peels";
@@ -1303,15 +1427,16 @@ void AMonsieurMonet_Character::SelectPeel()
 }
 void AMonsieurMonet_Character::SelectHealthRegen()
 {
-	GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Red, TEXT("HealthRegen are the current lure item"));
-	if (HealthRegen > 0)
+	//GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Red, TEXT("HealthRegen are the current lure item"));
+	if (Health < 1.0f && CheeseCount != 0)
 	{
-		CurrentLureItem = "HealthRegen";
+		EatCheese();
+		UAkGameplayStatics::PostEvent(ChewingCheeseEvent, this);
 	}
 }
 void AMonsieurMonet_Character::SelectBomb()
 {
-	GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Red, TEXT("Bombs are the current lure item"));
+	//GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Red, TEXT("Bombs are the current lure item"));
 	if (Bombs > 0)
 	{
 		CurrentLureItem = "Bombs";

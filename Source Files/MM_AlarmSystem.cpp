@@ -139,7 +139,7 @@ void AMM_AlarmSystem::ManualAlarm()
 		StandbyLight->SetVisibility(false, false);
 		ScalarValue = 1.0f;
 		/*AlarmAudio->PostAkEvent(AlarmAudioEvent, "Play_Alarm");*/
-		AlarmAudio->SetOutputBusVolume(10.0f);
+		AlarmAudio->SetOutputBusVolume(0.7f);
 		IsGateOpen = true;
 		AlarmLight->SetLightColor(AlarmOnLightColor, true);
 	}

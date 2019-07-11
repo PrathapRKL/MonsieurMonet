@@ -9,9 +9,11 @@
 #include "Kismet/GameplayStatics.h"
 #include "Interactables/MM_CoverActor.h"
 #include "Engine/Classes/GameFramework/DamageType.h"
-#include "UObject/ObjectMacros.h"
-#include "UObject/Object.h"
+//#include "UObject/ObjectMacros.h"
+//#include "UObject/Object.h"
 #include "Components/TimelineComponent.h"
+//#include "Components/DecalComponent.h"
+//#include "Engine/DecalActor.h"
 #include "MonsieurMonet_Character.generated.h"
 
 //Forward declarations.
@@ -26,6 +28,12 @@ class UForceFeedbackEffect;
 class UDataTable;
 class AMM_LureItems_Base;
 class USphereComponent;
+class UBoxComponent;
+class UDecalComponent;
+class AMM_Cheese;
+class UAkAudioEvent;
+class UAkComponent;
+class UInstancedStaticMeshComponent;
 
 //Struct for Inventory.
 USTRUCT(BlueprintType)
@@ -74,7 +82,6 @@ public:
 	//Check to see if the item can be used.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 		bool bCanBeUsed;
-
 
 	//operator overloading to compare data to notify unreal c++ of the item being used or deleted.
 	bool operator==(const FLureItemInventory& Item) const
@@ -125,6 +132,18 @@ public:
 	//True if player is currently taking cover.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 		bool bIsInCover = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+		bool bWantToCover = false;
+
+
+	//float variables for controlling the cameras on hiding spots or cover actors.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+		float CamPitch = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+		float CamYaw = 0.0f;
+
 
 	//CoverActor reference.
 	AMM_CoverActor* Covers;
@@ -331,18 +350,46 @@ public:
 		void ToggleInventory();
 
 	//for lure throwing
-	UPROPERTY()
+	UPROPERTY(VisibleAnywhere, BlueprintReadWrite)
 		UBoxComponent* LureStart;
-	UPROPERTY()
+	UPROPERTY(VisibleAnywhere, BlueprintReadWrite)
 		UDecalComponent* TargetEndDecal;
+	UPROPERTY(VisibleAnywhere, BlueprintReadWrite)
+		FName SocketName = "Right_Fingers1_Jnt";
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadWrite)
+		UInstancedStaticMeshComponent* BallAim;
 
+	//tickaim
+	UFUNCTION()
+		void TickAim();
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+		bool canAimCPP = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+		bool showBallAimCPP = false;
+			
 	//Event to aim at the target.
 	UFUNCTION(BlueprintNativeEvent)
 		void Aim();
 	virtual void Aim_Implementation();
 
-	UFUNCTION(BlueprintNativeEvent)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+		FVector AimTargetPos;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+		FVector ProjVel;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+		TArray<FVector> HitArray;
+
+	UPROPERTY(BlueprintReadWrite)
+		int CurrentHitNum = 0;
+	UPROPERTY(BlueprintReadWrite)
+		int CurrentAimInst = 0;
+
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable)
 		void AimStop();
 	virtual void AimStop_Implementation();
 
@@ -415,13 +462,13 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite)
 		TArray<FLureItemInventory> LInventory;
 
-	UPROPERTY()
-		int Coins = 0;
-	UPROPERTY()
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+		int Coins = 3;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 		int Peels = 0;
-	UPROPERTY()
-		int HealthRegen = 0;
-	UPROPERTY()
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+		int HealthRegen = 5;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 		int Bombs = 0;
 
 	UFUNCTION()
@@ -440,7 +487,7 @@ public:
 	//	int Value(int32 Slot);
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite)
-	class AMM_Interactables_Base* CurrentInteractable;
+		class AMM_Interactables_Base* CurrentInteractable;
 	class AMM_Pickups* PickupItemss;
 
 	//Temporary search radius (for interactables).
@@ -454,8 +501,12 @@ public:
 	UFUNCTION(BlueprintCallable)
 		void SetCanTakeCover(bool CanTakeCover, AMM_CoverActor* CoverActor);
 
+	//Toggle Cover.
 	UFUNCTION(BlueprintCallable)
 		void ToggleCover();
+
+	UFUNCTION(BlueprintCallable)
+		void Stop_Cover();
 
 	//Cover animation functions.
 	UFUNCTION(BlueprintCallable)
@@ -557,11 +608,11 @@ private:
 		TArray<int32> LOSTriangles;
 
 	UFUNCTION()
-	void InitLOSMesh();
+		void InitLOSMesh();
 	UFUNCTION()
-	void TickLOSMesh();
+		void TickLOSMesh();
 	UFUNCTION()
-	void UpdateLOSMeshData(const TArray<FVector>& Vertices, const TArray<int32>& Triangles);
+		void UpdateLOSMeshData(const TArray<FVector>& Vertices, const TArray<int32>& Triangles);
 
 public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
@@ -595,7 +646,7 @@ public:
 	//Timeline Component for the crouch camera.
 	//Timneline Component to Play the Crouch camera transition animation.
 	UPROPERTY()
-	FTimeline CrouchCameraAnimation;
+		FTimeline CrouchCameraAnimation;
 
 	//Deltatime(stepsize) for the timer calling the timeline tick.
 	static const float DELTATIME;
@@ -631,8 +682,8 @@ public:
 		FTimeline SprintCameraAnimation;
 
 	//Function which gets called from the Timer to call animTimeline.
-	UFUNCTION()
-		void TickSprintTimeline(float Value);
+	UFUNCTION(BlueprintCallable)
+		void TickSprintTL(float Value);
 
 	UPROPERTY()
 		TEnumAsByte<ETimelineDirection::Type> SprintCamTimelineDir;
@@ -682,4 +733,43 @@ public:
 	//Called when the timeline finishes playing.
 	UFUNCTION()
 		void PlayCWCameraAnim();
+
+
+	//Animation montage for eating cheese.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+		UAnimMontage* EatingMontage;
+
+	//Stop the movement when eating cheese.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+		bool bIsEatingCheese = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+		int32 CheeseCount = 5;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+		TArray<AMM_Cheese*> Cheese;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+		AMM_Cheese* CheeseActor;
+
+	UFUNCTION(BlueprintCallable)
+		void EatCheese();
+
+	//AK Component for chewing cheese.
+	UPROPERTY(BlueprintReadWrite, EditAnywhere)
+		UAkAudioEvent* ChewingCheeseEvent;
+
+	UFUNCTION(BlueprintCallable)
+		void DamageReceived(AActor* DamagedActor, float Damage, const class UDamageType* DamageType, AController* InstigatedBy, AActor* DamageCauser);
+
+
+	//Camera Shake for the death of the player character.
+	UPROPERTY(BlueprintReadWrite, EditAnywhere)
+		TSubclassOf<class UCameraShake> DeathCamShake;
+	//Montage for the cahracter's death animation.
+	UPROPERTY(BlueprintReadWrite, EditAnywhere)
+		UAnimMontage* PlayerDeathMontage;
+	//AK Component for Death anim of the player.
+	UPROPERTY(BlueprintReadWrite, EditAnywhere)
+		UAkAudioEvent* Player_Lose;
 };

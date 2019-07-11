@@ -14,6 +14,7 @@
 #include "MonsieurMonetGameModeBase.h"
 #include "ConstructorHelpers.h"
 #include "Components/TimelineComponent.h"
+#include<thread>
 
 // Sets default values
 AMM_LaserWires::AMM_LaserWires()
@@ -101,13 +102,20 @@ void AMM_LaserWires::OnOverlapBegin(UPrimitiveComponent * OverlappedComp, AActor
 	if (bLaserWireEnabled == true)
 	{
 		AMonsieurMonet_Character* PlayerCharacter = Cast<AMonsieurMonet_Character>(OtherActor);
+		if (PlayerCharacter == nullptr)
+		{
+			return;
+		}
 		if (OtherActor == PlayerCharacter && PlayerCharacter != nullptr)
 		{
-			bTargetinLaser = true;
-			bTrippedAlarm = true;
-			OnOverlapBeginEvent();
-			UGameplayStatics::ApplyDamage(PlayerCharacter, 0.3, nullptr, this, NULL);
-			PlayerCharacter->Health -= 0.2f;
+			if (OtherComp == PlayerCharacter->GetCapsuleComponent())
+			{
+				bTargetinLaser = true;
+				bTrippedAlarm = true;
+				OnOverlapBeginEvent();
+				UGameplayStatics::ApplyDamage(PlayerCharacter, 0.3, nullptr, this, NULL);
+				PlayerCharacter->Health -= 0.3f;
+			}
 		}
 	}
 }
@@ -142,6 +150,7 @@ void AMM_LaserWires::ReverseLaserWireAnimation()
 
 void AMM_LaserWires::ToggleLaserWire(bool bNewEnabled)
 {
+	/*std::thread t1(ToggleLaserWire, std::ref(bool), )*/
 	if (bNewEnabled == true)
 	{
 		bLaserWireEnabled = true;

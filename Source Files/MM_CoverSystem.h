@@ -9,6 +9,8 @@
 class UBoxComponent;
 class UArrowComponent;
 class UBillboardComponent;
+class UCameraComponent;
+class UTextRenderComponent;
 
 UCLASS()
 class MONSIEURMONET_API AMM_CoverSystem : public AActor
@@ -44,6 +46,31 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 		UBoxComponent* BlockingVolume_Front;
 
+	//Interaction text and camera component for the cover system.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+		UTextRenderComponent* InteractText;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+		UCameraComponent* CoverCamera;
+
+
+	//The Blend camera properties to edit in the editor(engine).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera Controls", Meta = (MakeEditWidget = true))
+		FVector CameraLocation;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera Controls")
+		FRotator CameraRotation;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera Controls")
+		float CameraFOV = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera Controls")
+		float CameraMaxYaw;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera Controls")
+		float CameraMaxPitch;
+
+
 protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
@@ -59,4 +86,11 @@ public:
 	//On end overlap delegate functions.
 	UFUNCTION(BlueprintCallable)
 		void OnCompBeginOverlap(UPrimitiveComponent* OverlappedComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
+
+	//User Construction Script.
+	virtual void OnConstruction(const FTransform& Transform) override;
+
+	//Function to execute when interacted with.
+	UFUNCTION(BlueprintCallable)
+	void OnInteract();
 };
