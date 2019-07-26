@@ -9,11 +9,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Interactables/MM_CoverActor.h"
 #include "Engine/Classes/GameFramework/DamageType.h"
-//#include "UObject/ObjectMacros.h"
-//#include "UObject/Object.h"
 #include "Components/TimelineComponent.h"
-//#include "Components/DecalComponent.h"
-//#include "Engine/DecalActor.h"
 #include "MonsieurMonet_Character.generated.h"
 
 //Forward declarations.
@@ -99,6 +95,14 @@ public:
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnThrowCoinSignature, AActor*, Actor);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnNoiseParticleSprintSignature, AActor*, Particle);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnNoiseParticleWalkSignature, AActor*, Particle);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnNoiseParticleCrouchSignature, AActor*, Particle);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnNoiseParticleIdleSignature, AActor*, Particle);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnNoiseNotifySignature, AActor*, InstigatedBy, float, NosieRds);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnStaminaConsumedSignature, AActor*, Actor);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnStaminaRecoveredSignature, AActor*, Actor);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnPlayerCrouchedSignature, AActor*, Actor);
 
 UCLASS()
 class MONSIEURMONET_API AMonsieurMonet_Character : public ACharacter
@@ -369,7 +373,7 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 		bool showBallAimCPP = false;
-			
+
 	//Event to aim at the target.
 	UFUNCTION(BlueprintNativeEvent)
 		void Aim();
@@ -643,7 +647,10 @@ public:
 	FTimerHandle NotifyHandle;
 
 
-	//Timeline Component for the crouch camera.
+	/*
+	* Timeline Component for the crouch camera.
+	*/
+
 	//Timneline Component to Play the Crouch camera transition animation.
 	UPROPERTY()
 		FTimeline CrouchCameraAnimation;
@@ -676,7 +683,10 @@ public:
 		class AMM_CoverSystem* CoverActors;
 
 
-	//Timeline Component for Dynamic_Sprint_Camera.
+	/*
+	* Timeline Component for Dynamic_Sprint_Camera.
+	*/
+
 	//Timneline Component to Play the sprint camera transition animation.
 	UPROPERTY()
 		FTimeline SprintCameraAnimation;
@@ -703,7 +713,10 @@ public:
 		bool StaminaIsLow;
 
 
-	//Delegate Function to check for and notify the guards.
+	/*
+	* Delegate Function to check for and notify the guards of the noise produced by the player.
+	*/
+
 	UFUNCTION(BlueprintCallable)
 		void OnNoiseBeginOverlap(UPrimitiveComponent* OverlappedComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool FromSweep, const FHitResult& SweepResult);
 
@@ -711,7 +724,10 @@ public:
 		void OnNoiseEndOverlap(UPrimitiveComponent* OverlappedComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex);
 
 
-	//Timeline Component for Dynamic_Crouch and Crouch walk_Camera.
+	/*
+	* Timeline Component for Dynamic_Crouch and Crouch walk_Camera.
+	*/
+
 	//Timneline Component to Play the Crouch camera transition animation.
 	UPROPERTY()
 		FTimeline CrouchWalkTL;
@@ -734,6 +750,10 @@ public:
 	UFUNCTION()
 		void PlayCWCameraAnim();
 
+
+	/*
+	* Montages, events/functions for eating cheese.
+	*/
 
 	//Animation montage for eating cheese.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
@@ -763,13 +783,100 @@ public:
 		void DamageReceived(AActor* DamagedActor, float Damage, const class UDamageType* DamageType, AController* InstigatedBy, AActor* DamageCauser);
 
 
+	/*
+	* Camera shake and aniamtion montage for the player character's death.
+	*/
+
 	//Camera Shake for the death of the player character.
 	UPROPERTY(BlueprintReadWrite, EditAnywhere)
 		TSubclassOf<class UCameraShake> DeathCamShake;
-	//Montage for the cahracter's death animation.
+	//Montage for the character's death animation.
 	UPROPERTY(BlueprintReadWrite, EditAnywhere)
 		UAnimMontage* PlayerDeathMontage;
 	//AK Component for Death anim of the player.
 	UPROPERTY(BlueprintReadWrite, EditAnywhere)
 		UAkAudioEvent* Player_Lose;
+
+
+	/*
+	* Delegate for the noise particle.
+	*/
+
+	//Delegate Dispatcher for the noise particle.
+	UPROPERTY(BlueprintAssignable)
+		FOnNoiseParticleSprintSignature OnNoiseParticleSprint;
+
+	//Delegate Dispatcher for the noise particle.
+	UPROPERTY(BlueprintAssignable)
+		FOnNoiseParticleWalkSignature OnNoiseParticleWalk;
+
+	//Delegate Dispatcher for the noise particle.
+	UPROPERTY(BlueprintAssignable)
+		FOnNoiseParticleCrouchSignature OnNoiseParticleCrouch;
+
+	UPROPERTY(BlueprintAssignable)
+		FOnNoiseParticleIdleSignature OnNoiseParticleIdle;
+
+	//To notify when the player runs.
+	UFUNCTION(BlueprintCallable)
+		void NoiseParticle_Sprint(AActor* Actor);
+
+	//To notify when the player walks.
+	UFUNCTION(BlueprintCallable)
+		void NoiseParticle_Walk(AActor* Actor);
+
+	//To notify when the player crouches.
+	UFUNCTION(BlueprintCallable)
+		void NoiseParticle_Crouch(AActor* Actor);
+
+	//To notify when the player is idle.
+	UFUNCTION(BlueprintCallable)
+		void NoiseParticle_Idle(AActor* Actor);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+		UMaterialInterface* BallAimMat;
+
+
+	/*
+	* Delegate to notify the guards of the noise being made.
+	*/
+
+	//Delegate Dispatcher for the noise produced by the player.
+	UPROPERTY(BlueprintAssignable)
+		FOnNoiseNotifySignature OnNoiseNotify;
+
+	//To notify when the player makes noise.
+	UFUNCTION(BlueprintCallable)
+		void ProduceNoise(AActor* Actor, float Rds);
+
+	UFUNCTION(BlueprintCallable)
+		void ChangeNoiseRadius(AActor* Actor, float Rds);
+
+
+	/*
+	* Delegate to hide and unhide the stamina bar.
+	*/
+
+	//Delegate signature to hide the stamina bar.
+	UPROPERTY(BlueprintAssignable)
+		FOnStaminaConsumedSignature OnStaminaConsumed;
+
+	//Delagte signature to unhide the stamina bar.
+	UPROPERTY(BlueprintAssignable)
+		FOnStaminaRecoveredSignature OnStaminaRecovered;
+
+	UFUNCTION(BlueprintCallable)
+		void StaminaConsumed(AActor* Actor);
+
+	UFUNCTION(BlueprintCallable)
+		void StaminaRecovered(AActor* Actor);
+
+
+	/*
+	* Delegate to hide and unhide the stamina bar.
+	*/
+
+	//Delegate signature for when the player crouches..
+	UPROPERTY(BlueprintAssignable)
+		FOnPlayerCrouchedSignature OnPlayerCrouched;
 };

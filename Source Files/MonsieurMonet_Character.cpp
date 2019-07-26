@@ -190,10 +190,11 @@ AMonsieurMonet_Character::AMonsieurMonet_Character()
 	//for the aiming
 	TargetEndDecal = CreateDefaultSubobject<UDecalComponent>(TEXT("TargetEndDecal"));
 	TargetEndDecal->SetupAttachment(RootComponent);
-	
+
 	//Aim assistants
 	BallAim = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("BallAim"));
 	BallAim->AttachTo(RootComponent);
+	BallAim->SetMaterial(0, BallAimMat);
 }
 
 void AMonsieurMonet_Character::InitLOSMesh()
@@ -338,6 +339,8 @@ void AMonsieurMonet_Character::BeginPlay()
 	NoiseRadiusComp->OnComponentBeginOverlap.AddDynamic(this, &AMonsieurMonet_Character::OnNoiseBeginOverlap);
 	NoiseRadiusComp->OnComponentEndOverlap.AddDynamic(this, &AMonsieurMonet_Character::OnNoiseEndOverlap);
 
+	OnNoiseNotify.AddDynamic(this, &AMonsieurMonet_Character::ChangeNoiseRadius);
+
 	/*LimitCamera();*/
 
 	//Inventory Slots.
@@ -431,6 +434,7 @@ void AMonsieurMonet_Character::BeginPlay()
 	//Delegate to receive damage.
 	OnTakeAnyDamage.AddDynamic(this, &AMonsieurMonet_Character::DamageReceived);
 
+	NoiseParticle_Idle(this);
 }
 
 // Called every frame
@@ -447,7 +451,7 @@ void AMonsieurMonet_Character::Tick(float DeltaTime)
 	UpdateStamina();
 
 	//updates aiming positions
-	if (bIsAiming == true && canAimCPP == true)
+	if (bIsAiming == true && canAimCPP == true && IsHiding == false)
 	{
 		TickAim();
 	}
@@ -475,21 +479,21 @@ void AMonsieurMonet_Character::Tick(float DeltaTime)
 
 	if (GetCharacterMovement()->IsCrouching() == true)
 	{
-		NoiseRadius = 0.0f;
-		NoiseRadiusComp->SetSphereRadius(NoiseRadius);
+		/*NoiseRadius = 0.0f;
+		NoiseRadiusComp->SetSphereRadius(NoiseRadius);*/
 		GetCharacterMovement()->MaxWalkSpeedCrouched = 230.0f;
 	}
-	else if (GetCharacterMovement()->MaxWalkSpeed >= 300.0f && GetCharacterMovement()->IsCrouching() == false)
+	/*else if (GetCharacterMovement()->MaxWalkSpeed >= 300.0f && GetCharacterMovement()->IsCrouching() == false)
 	{
 		NoiseRadius = 250.0f;
 		NoiseRadiusComp->SetSphereRadius(NoiseRadius);
 	}
 
-	if (GetCharacterMovement()->MaxWalkSpeed >= 300.0f)
+	if (GetCharacterMovement()->MaxWalkSpeed > 330.0f)
 	{
 		NoiseRadius = 500.0f;
 		NoiseRadiusComp->SetSphereRadius(NoiseRadius);
-	}
+	}*/
 }
 
 
@@ -562,13 +566,31 @@ void AMonsieurMonet_Character::SetupPlayerInputComponent(UInputComponent* Player
 
 void AMonsieurMonet_Character::MoveForward(float Value)
 {
-	if (Controller != NULL && Value != 0.0f && !bIsInCover && IsHiding == false && bIsEatingCheese == false)
+	if (Controller != NULL && !bIsInCover && IsHiding == false)
 	{
-		const FRotator Rotation = Controller->GetControlRotation();
-		const FRotator YawRotation(0.0f, Rotation.Yaw, 0.0f);
-		const FVector Direction = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
-		AddMovementInput(Direction, Value);
-		if (Value == 0.0f)
+		if (Value != 0.0f)
+		{
+			const FRotator Rotation = Controller->GetControlRotation();
+			const FRotator YawRotation(0.0f, Rotation.Yaw, 0.0f);
+			const FVector Direction = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
+			AddMovementInput(Direction, Value);
+			if (GetVelocity().Size() > 30.0f && Issprinting == false && GetCharacterMovement()->IsCrouching() == false)
+			{
+				NoiseParticle_Walk(this);
+				NoiseRadius = 200.0f;
+				ProduceNoise(this, NoiseRadius);
+				NoiseRadiusComp->SetSphereRadius(NoiseRadius);
+			}
+			else if (GetVelocity().Size() < 30.0f)
+			{
+				NoiseParticle_Idle(this);
+			}
+			else if (Issprinting == true)
+			{
+				NoiseParticle_Sprint(this);
+			}
+		}
+		else
 		{
 			NoiseLevel = 0.0f;
 		}
@@ -579,14 +601,36 @@ void AMonsieurMonet_Character::MoveRight(float Value)
 {
 	CoverValue = Value;
 
-	if (Controller != NULL && Value != 0.0f && IsHiding == false && bIsEatingCheese == false)
+	if (Controller != NULL && IsHiding == false)
 	{
 		if (!bIsInCover)
 		{
-			const FRotator Rotation = Controller->GetControlRotation();
-			const FRotator YawRotation(0.0f, Rotation.Yaw, 0.0f);
-			const FVector Direction = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
-			AddMovementInput(Direction, Value);
+			if (Value != 0.0f)
+			{
+				const FRotator Rotation = Controller->GetControlRotation();
+				const FRotator YawRotation(0.0f, Rotation.Yaw, 0.0f);
+				const FVector Direction = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
+				AddMovementInput(Direction, Value);
+				if (GetVelocity().Size() > 30.0f && Issprinting == false && GetCharacterMovement()->IsCrouching() == false)
+				{
+					NoiseParticle_Walk(this);
+					NoiseRadius = 200.0f;
+					ProduceNoise(this, NoiseRadius);
+					NoiseRadiusComp->SetSphereRadius(NoiseRadius);
+				}
+				else if (GetVelocity().Size() < 30.0f)
+				{
+					NoiseParticle_Idle(this);
+				}
+				else if (Issprinting == true)
+				{
+					NoiseParticle_Sprint(this);
+				}
+			}
+			else
+			{
+				NoiseLevel = 0.0f;
+			}
 		}
 		else
 		{
@@ -598,39 +642,30 @@ void AMonsieurMonet_Character::MoveRight(float Value)
 			const FRotator YawRotation(0.0f, Rotation.Yaw, 0.0f);
 			const FVector Direction = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
 			AddMovementInput(Direction, Value);
-			/*}*/
-			/*else*/
-			//{
-			//	FMath::Clamp(Value, 0.0f, 1.0f);
-			//	/*GEngine->AddOnScreenDebugMessage(-1, 10.0f, FColor::Blue, TEXT("Clamping Works"));*/
-			//}
-		}
-		if (Value == 0.0f)
-		{
-			NoiseLevel = 0.0f;
+			NoiseParticle_Idle(this);
 		}
 	}
 }
 
 void AMonsieurMonet_Character::ControllerPitch(float Pitch)
 {
-	float BaseLookUpRate = 70.0f;
+	float BaseLookUpRate = 30.0f;
 	float Value = Pitch * BaseLookUpRate * GetWorld()->GetDeltaSeconds();
 	if (Pitch > 140.0f && Pitch < 180.0f)
 		Pitch = 140.0f;
 	//if (Pitch < 300.0f && Pitch > 180.0f)
 	//	Pitch = 300.0f;
 	AddControllerPitchInput(Value);
-	CamPitch += Value;
+	CamPitch -= Value * 2.0f;
 }
 
 void AMonsieurMonet_Character::ControllerYaw(float Yaw)
 {
-	float BaseTurnrate = 70.0f;
+	float BaseTurnrate = 30.0f;
 	float Value = Yaw * BaseTurnrate * GetWorld()->GetDeltaSeconds();
-	
+
 	AddControllerYawInput(Value);
-	CamYaw += Value;
+	CamYaw += Value * 2.0f;
 }
 
 void AMonsieurMonet_Character::Sprint()
@@ -640,17 +675,17 @@ void AMonsieurMonet_Character::Sprint()
 		UnCrouch();
 		Issprinting = true;
 		AimStop_Implementation();
-		NoiseRadius = 500.0f;
-		NoiseRadiusComp->SetSphereRadius(NoiseRadius);
+		/*NoiseRadius = 500.0f;
+		NoiseRadiusComp->SetSphereRadius(NoiseRadius);*/
 		GetCharacterMovement()->MaxWalkSpeed = 520.0f;
-		if (GetCharacterMovement()->MaxWalkSpeed >= 300.0f)
+		if (GetVelocity().Size() > 340.0f)
 		{
-			NoiseLevel = 1400.0f;
 			SprintCameraAnimation.Play();
 			NoiseRadius = 500.0f;
+			ProduceNoise(this, NoiseRadius);
 			NoiseRadiusComp->SetSphereRadius(NoiseRadius);
+			NoiseParticle_Sprint(this);
 		}
-		//CurrentStamina -= CurrentStamina*world->GetDeltaSeconds();
 	}
 }
 
@@ -665,12 +700,11 @@ void AMonsieurMonet_Character::Sprint_Stop()
 	if (GetCharacterMovement()->IsCrouching() == false)
 	{
 		GetCharacterMovement()->MaxWalkSpeed = 300.0f;
-		NoiseLevel = 700.0f;
 		SprintCameraAnimation.Reverse();
-		NoiseRadius = 250.0f;
+		NoiseRadius = 200.0f;
+		ProduceNoise(this, NoiseRadius);
 		NoiseRadiusComp->SetSphereRadius(NoiseRadius);
 		Issprinting = false;
-		//world->GetTimerManager().SetTimer(RecoverStaminaHandle, &AMonsieurMonet_Character::RecoverStamina(), 1.0f, false, 4.8f);
 	}
 }
 
@@ -686,11 +720,16 @@ void AMonsieurMonet_Character::UpdateStamina()
 	if (CurrentStamina > 0)
 	{
 		CanSprint = true;
+		/*StaminaRecovered(this);*/
 	}
 
 	if (Issprinting && GetVelocity().Size() > 300.0f)
 	{
 		CurrentStamina -= StaminaConsumeRate;
+		if (CurrentStamina < 100)
+			StaminaRecovered(this);
+		if (CurrentStamina >= MaxStamina)
+			StaminaConsumed(this);
 	}
 
 	if (CurrentStamina <= 0)
@@ -698,6 +737,7 @@ void AMonsieurMonet_Character::UpdateStamina()
 		CanSprint = false;
 		Sprint_Stop();
 		StaminaIsLow = true;
+		StaminaRecovered(this);
 	}
 
 	//recovers sprint bar
@@ -705,6 +745,7 @@ void AMonsieurMonet_Character::UpdateStamina()
 	{
 		CurrentStamina += StaminaRecoverRate;
 	}
+
 }
 
 void AMonsieurMonet_Character::NotifyPawnNoise()
@@ -721,8 +762,8 @@ void AMonsieurMonet_Character::NotifyPawnNoise()
 
 void AMonsieurMonet_Character::TickCrouchTimeline(float Value)
 {
-	float LerpedValue = FMath::Lerp(0.0f, -50.0f, Value);
-	PlayerCamera->SetRelativeLocation(FVector(0.0f, 0.0f, LerpedValue), false, nullptr, ETeleportType::None);
+	float LerpedValue = FMath::Lerp(156.0f, 50.0f, Value);
+	CameraBoom->TargetOffset = FVector(0.0f, 0.0f, LerpedValue);
 }
 
 void AMonsieurMonet_Character::PlayCrouchCameraAnim()
@@ -791,6 +832,46 @@ void AMonsieurMonet_Character::DamageReceived(AActor* DamagedActor, float Damage
 	}
 }
 
+void AMonsieurMonet_Character::NoiseParticle_Sprint(AActor * Actor)
+{
+	OnNoiseParticleSprint.Broadcast(this);
+}
+
+void AMonsieurMonet_Character::NoiseParticle_Walk(AActor * Actor)
+{
+	OnNoiseParticleWalk.Broadcast(this);
+}
+
+void AMonsieurMonet_Character::NoiseParticle_Crouch(AActor * Actor)
+{
+	OnNoiseParticleCrouch.Broadcast(this);
+}
+
+void AMonsieurMonet_Character::NoiseParticle_Idle(AActor * Actor)
+{
+	OnNoiseParticleIdle.Broadcast(this);
+}
+
+void AMonsieurMonet_Character::ProduceNoise(AActor * Actor, float Rds)
+{
+	OnNoiseNotify.Broadcast(this, Rds);
+}
+
+void AMonsieurMonet_Character::ChangeNoiseRadius(AActor * Actor, float Rds)
+{
+	NoiseRadiusComp->SetSphereRadius(Rds);
+}
+
+void AMonsieurMonet_Character::StaminaConsumed(AActor * Actor)
+{
+	OnStaminaConsumed.Broadcast(this);
+}
+
+void AMonsieurMonet_Character::StaminaRecovered(AActor * Actor)
+{
+	OnStaminaRecovered.Broadcast(this);
+}
+
 void AMonsieurMonet_Character::Interact()
 {
 	UWorld* TheWorld = GetWorld();
@@ -799,8 +880,6 @@ void AMonsieurMonet_Character::Interact()
 		CheckForInteractables();
 		if (CurrentInteractable != nullptr && bCanTakeCover == false)
 		{
-			/*PlayAnimMontage(PickupMontage, 1.0f, NAME_None);*/
-			//TheWorld->GetTimerManager().SetTimer(PickupHandle, &AMonsieurMonet_Character::CurrentInteractable->PUInteract_Implementation(), 1.0f, false, 4.8f);
 			CurrentInteractable->PUInteract_Implementation();
 		}
 	}
@@ -844,7 +923,7 @@ void AMonsieurMonet_Character::TickAim()
 	const TArray<AActor*> ActorsIgnored;
 
 	UGameplayStatics::Blueprint_PredictProjectilePath_ByTraceChannel(world, Hit, OutPathPos, LastPos, StartPos, LaunchVel,
-		true, 20.0F, ECollisionChannel::ECC_Visibility, false,
+		true, 20.0F, ECollisionChannel::ECC_GameTraceChannel1, false,
 		ActorsIgnored, EDrawDebugTrace::None, 0.0F);
 
 	if (Hit.bBlockingHit == false)
@@ -867,7 +946,7 @@ void AMonsieurMonet_Character::TickAim()
 	ProjVel = LaunchVel;
 	HitArray = OutPathPos;
 
-	
+
 	if (showBallAimCPP == false)
 	{
 		return;
@@ -904,7 +983,6 @@ void AMonsieurMonet_Character::TickAim()
 		trans.SetRotation(FRotator::ZeroRotator.Quaternion());
 		trans.SetScale3D(FVector(0.2F, 0.2F, 0.2F));
 		BallAim->UpdateInstanceTransform(j, trans, true, true, true);
-
 	}
 
 	//sets the ball aim positions of unused ones
@@ -922,8 +1000,6 @@ void AMonsieurMonet_Character::Aim_Implementation()
 	UWorld* world = GetWorld();
 
 	float ThrowableRadius = 350.0f;
-
-
 	if (bCrouching == false)
 	{
 		bIsAiming = true;
@@ -975,7 +1051,7 @@ void AMonsieurMonet_Character::AimStop_Implementation()
 
 void AMonsieurMonet_Character::Shoot_Implementation()
 {
-	if (bIsAiming == false && bIsAiming_Crouch == false)
+	if (bIsAiming == false && bIsAiming_Crouch == false && IsHiding == false)
 	{
 		if (bTriggered == true && IsAttacking == false)
 		{
@@ -1025,31 +1101,28 @@ void AMonsieurMonet_Character::PauseGame()
 
 void AMonsieurMonet_Character::PlayerCrouch()
 {
-	if (bIsAiming == false)
+	if (bIsAiming == false && IsHiding == false)
 	{
 		if (GetCharacterMovement()->IsCrouching())
 		{
 			bCrouching = true;
-			NoiseLevel = 0.0f;
 			CrouchCameraAnimation.Reverse();
 			UnCrouch();
-			NoiseRadius = 0.0f;
-			NoiseRadiusComp->SetSphereRadius(NoiseRadius);
-			NoiseRadiusComp->SetCollisionResponseToAllChannels(ECollisionResponse::ECR_Overlap);
+			//NoiseRadius = 0.0f;
+			//ProduceNoise(this, NoiseRadius);
+			//NoiseRadiusComp->SetSphereRadius(NoiseRadius);
 			CrouchWalkTL.Reverse();
 		}
 		else
 		{
-			/*if (SprintCameraAnimation.IsPlaying() == true)
-			{
-				SprintCameraAnimation.Reverse();
-			}*/
 			bCrouching = false;
 			CrouchCameraAnimation.Play();
 			Crouch();
+			OnPlayerCrouched.Broadcast(this);
 			NoiseRadius = 0.0f;
-			NoiseRadiusComp->SetCollisionResponseToAllChannels(ECollisionResponse::ECR_Ignore);
+			ProduceNoise(this, NoiseRadius);
 			NoiseRadiusComp->SetSphereRadius(NoiseRadius);
+			NoiseParticle_Crouch(this);
 		}
 	}
 }

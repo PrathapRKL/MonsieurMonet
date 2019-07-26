@@ -30,6 +30,9 @@ public:
 		bool IsTriggering_1;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+		bool CanHide;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	bool IsInVolume;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)

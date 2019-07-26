@@ -74,7 +74,7 @@ void AMM_HidingSpots::Tick(float DeltaTime)
 		{
 			UnHidePlayer();
 			APlayerController* PlayerController = Cast<APlayerController>(UGameplayStatics::GetPlayerController(GetWorld(), 0));
-			PlayerController->SetViewTargetWithBlend(UGameplayStatics::GetPlayerCharacter(GetWorld(), 0), 1.0f, EViewTargetBlendFunction::VTBlend_EaseInOut, 4.6f, false);
+			PlayerController->SetViewTargetWithBlend(UGameplayStatics::GetPlayerCharacter(GetWorld(), 0), 0.2f, EViewTargetBlendFunction::VTBlend_Linear, 4.6f, false);
 			isCurrentlyHid = false;
 		}
 	}
@@ -120,7 +120,7 @@ void AMM_HidingSpots::OnInteract()
 	{
 		AMonsieurMonet_Character* PlayerCharacter = Cast<AMonsieurMonet_Character>(UGameplayStatics::GetPlayerCharacter(GetWorld(), 0));
 		APlayerController* PlayerController = Cast<APlayerController>(UGameplayStatics::GetPlayerController(GetWorld(), 0));
-		PlayerController->SetViewTargetWithBlend(this, 1.0f, EViewTargetBlendFunction::VTBlend_EaseInOut, 4.6f, false);
+		PlayerController->SetViewTargetWithBlend(this, 0.2f, EViewTargetBlendFunction::VTBlend_Linear, 4.6f, false);
 		HSCamera->bUsePawnControlRotation = true;
 		OnInteractEvent();
 		//PlayerCharacter->IsHiding = false;
@@ -129,13 +129,19 @@ void AMM_HidingSpots::OnInteract()
 
 void AMM_HidingSpots::HidePlayer()
 {
-	AMonsieurMonet_Character* PlayerCharacter = Cast<AMonsieurMonet_Character>(UGameplayStatics::GetPlayerCharacter(GetWorld(), 0));
-	PlayerCharacter->IsHiding = true;
-	PlayerCharacter->GetCharacterMovement()->DisableMovement();
-	OnInteract();
-	PlayerCharacter->SetActorLocation(PlayerHidingLocation, false, nullptr, ETeleportType::None);
-	HidingMesh->SetCollisionResponseToAllChannels(ECollisionResponse::ECR_Block);
-	PlayerCharacter->SetActorHiddenInGame(true);
+	if (CanHide == false)
+	{
+		AMonsieurMonet_Character* PlayerCharacter = Cast<AMonsieurMonet_Character>(UGameplayStatics::GetPlayerCharacter(GetWorld(), 0));
+		PlayerCharacter->IsHiding = true;
+		PlayerCharacter->GetCharacterMovement()->DisableMovement();
+		OnInteract();
+		PlayerCharacter->SetActorLocation(PlayerHidingLocation, false, nullptr, ETeleportType::None);
+		/*HidingMesh->SetCollisionResponseToAllChannels(ECollisionResponse::ECR_Block);*/
+		PlayerCharacter->SetActorHiddenInGame(true);
+		PlayerCharacter->canAimCPP = false;
+		PlayerCharacter->NoiseParticle_Idle(PlayerCharacter);
+		PlayerCharacter->NoiseRadiusComp->SetSphereRadius(0.0f, true);
+	}
 }
 
 void AMM_HidingSpots::UnHidePlayer()
@@ -146,6 +152,8 @@ void AMM_HidingSpots::UnHidePlayer()
 	PlayerCharacter->GetCharacterMovement()->SetMovementMode(EMovementMode::MOVE_Walking, 0);
 	/*HidingMesh->SetCollisionResponseToAllChannels(ECollisionResponse::ECR_Ignore);*/
 	PlayerCharacter->SetActorHiddenInGame(false);
+	PlayerCharacter->canAimCPP = true;
+
 }
 
 void AMM_HidingSpots::OnConstruction(const FTransform & Transform)

@@ -33,7 +33,7 @@ EBTNodeResult::Type UBTTask_Swift_PatrolPoints::ExecuteTask(UBehaviorTreeCompone
 	if (Waypoints)
 	{
 		//To find a position that is close to the way point.
-		const float SearchRadius = 300.0f;
+		const float SearchRadius = 6400.0f;
 		const FVector SearchOrigin = Waypoints->GetActorLocation();
 		SwiftGuard_Controller->SetEnemy(nullptr);
 		FNavLocation ResultLocation;

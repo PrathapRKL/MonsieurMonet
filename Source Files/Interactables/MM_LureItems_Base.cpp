@@ -88,9 +88,9 @@ void AMM_LureItems_Base::OnPickedUp()
 	{
 		UAkGameplayStatics::SpawnAkComponentAtLocation(GetWorld(), PickedUpSound, nullptr, GetActorLocation(), GetActorRotation(), true, "", "", true);
 	}
+	OnPickedupEvent();
 	GetWorld()->DestroyActor(this);
 	MakeNoiseEve(NoiseImpact, PickedUpBy);
-	OnPickedupEvent();
 }
 
 void AMM_LureItems_Base::LThrow()

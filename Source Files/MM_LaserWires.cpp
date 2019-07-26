@@ -93,8 +93,8 @@ void AMM_LaserWires::Tick(float DeltaTime)
 void AMM_LaserWires::UpdateBeamLocations()
 {
 	//Edit this to fix the lasertripwire offset.
-	P_LaserWire->SetBeamSourcePoint(0, LaserStartMesh->GetComponentLocation(), 0);
-	P_LaserWire->SetBeamTargetPoint(0, (LaserStartMesh->GetComponentLocation() + (GetActorRotation().Vector()) * LaserEndPosition.X), 0);
+	P_LaserWire->SetBeamSourcePoint(0, FVector(LaserStartMesh->GetComponentLocation().X, LaserStartMesh->GetComponentLocation().Y, LaserStartMesh->GetComponentLocation().Z + 5.0f), 0);
+	P_LaserWire->SetBeamTargetPoint(0, (FVector(LaserStartMesh->GetComponentLocation().X, LaserStartMesh->GetComponentLocation().Y, LaserStartMesh->GetComponentLocation().Z + 5.0f) + (GetActorRotation().Vector()) * LaserEndPosition.X), 0);
 }
 
 void AMM_LaserWires::OnOverlapBegin(UPrimitiveComponent * OverlappedComp, AActor * OtherActor, UPrimitiveComponent * OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult & SweepResult)

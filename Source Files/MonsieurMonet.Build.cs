@@ -8,9 +8,9 @@ public class MonsieurMonet : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 	
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore" , "AIModule", "ApplicationCore", "UMG", "GameplayTasks", "NavigationSystem" });
+		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore" , "AIModule", "ApplicationCore", "UMG", "GameplayTasks", "NavigationSystem", "AkAudio" });
 
-		PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore", "AkAudio", "ProceduralMeshComponent" });
+		PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore", "ProceduralMeshComponent" });
 
 		// Uncomment if you are using Slate UI
 		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
