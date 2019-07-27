@@ -1,4 +1,6 @@
 # MonsieurMonet
 ### Monsieur Monet is a single player, third-person stealth game where you play as the titular gentleman thief as you infiltrate a museum in search of The Phine Pharaoh’s Phace! Sneak your way through the museum with your trusty taser (to take down guards), and claim your prize!
-The project is a WIP and will be updated every 2 weeks. Only the source code will be updated on the repo, not the whole project.
+
+
+Final Build can be found here - https://drive.google.com/drive/folders/12Ju3pCxSgG5K8lHQVyersg7f7k2MDgVo?usp=sharing 
 
